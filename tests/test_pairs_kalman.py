@@ -1,17 +1,16 @@
 import numpy as np
 import pandas as pd
-from strategies.pairs_kalman import Pair, KalmanPairsTrader
 
-def test_pairs_signals_on_synthetic():
-    n = 200
-    t = np.linspace(0, 10, n)
-    a_close = pd.Series(100 + 2*np.sin(t) + 0.5*np.random.randn(n))
-    b_close = pd.Series( 98 + 2*np.sin(t+0.1) + 0.5*np.random.randn(n))
-    mkt = np.zeros(n)
+from strategies.pairs_kalman import Pair, backtest_pairs
 
-    pair = Pair("AAA", "BBB", a_close, b_close)
-    trader = KalmanPairsTrader(open_z=1.0, close_z=0.25)
-    opens, closes = trader.trade_signals(pair, mkt)
 
-    assert isinstance(opens, list) and isinstance(closes, list)
-    assert len(opens) >= 0 and len(closes) >= 0
+def test_pairs_trades_on_synthetic():
+    idx = pd.date_range("2024-01-01", periods=200, freq="D")
+    # create synthetic cointegrated-like series
+    b = pd.Series(np.cumsum(np.random.normal(0, 0.5, size=len(idx))) + 100, index=idx)
+    a = b * 1.5 + np.random.normal(0, 0.3, size=len(idx))  # proportional + small noise
+    pair = Pair("A", "B", a, b)
+    res = backtest_pairs(pair, open_z=1.0, close_z=0.2, max_holding_days=30, trans_cost_bps=1.0)
+    assert "trades" in res and "kpis" in res
+    # Not guaranteed >0, but we expect at least an attempt given low thresholds
+    assert res["kpis"]["n_trades"] >= 0
