@@ -6,7 +6,7 @@ from typing import Dict, Optional
 import numpy as np
 import pandas as pd
 
-# ---------- Returns & transforms ----------
+# Returns & transforms
 
 def compute_returns(prices_wide: pd.DataFrame) -> pd.DataFrame:
     """
@@ -16,7 +16,7 @@ def compute_returns(prices_wide: pd.DataFrame) -> pd.DataFrame:
     rets = prices_wide.pct_change().dropna(how="all")
     return rets.fillna(0.0)
 
-# ---------- Risk metrics (historical always available; parametric optional) ----------
+# ---------- Risk metrics 
 
 def var_historical(series: pd.Series, alpha: float = 0.05) -> float:
     """Historical VaR at level alpha (reported as positive loss magnitude)."""
@@ -94,7 +94,7 @@ def portfolio_metrics(portfolio_rets: pd.Series, alpha: float = 0.05) -> Dict[st
         kpis["norm_VaR_5"] = norm_var_opt
     return kpis
 
-# ---------- Rebalancing policy (used by backtest) ----------
+# Rebalacinign Policy
 
 def rebalance_policy(curr_weights: Dict[str, float],
                      target: Dict[str, float],
