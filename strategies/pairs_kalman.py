@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Tuple, Dict, Optional
+from typing import Dict, Optional
 import numpy as np
 import pandas as pd
 
@@ -25,23 +25,21 @@ class Pair:
         return (self.px_a / self.px_b).dropna()
 
     def log_spread(self) -> pd.Series:
-        """Log spread ln(A) - beta*ln(B); beta via rolling OLS (simple)."""
-        # quick beta estimate using rolling correlation/std or a static OLS.
-        # static for simplicity:
+        """
+        Log spread ln(A) - beta*ln(B); beta via static OLS on overlapping dates.
+        """
         ln_a, ln_b = np.log(self.px_a), np.log(self.px_b)
         idx = ln_a.index.intersection(ln_b.index)
         X = ln_b.loc[idx].values.reshape(-1, 1)
         y = ln_a.loc[idx].values
-        # OLS beta = (X'X)^(-1) X'y
-        beta = float(np.linalg.lstsq(np.c_[X, np.ones_like(X)], y, rcond=None)[0][0])
+        beta, intercept = np.linalg.lstsq(np.c_[X, np.ones_like(X)], y, rcond=None)[0]
         spread = ln_a.loc[idx] - beta * ln_b.loc[idx]
         return spread.dropna()
 
 
 def kalman_smooth(y: pd.Series, process_var: float = 1e-3, obs_var: float = 1e-2) -> pd.Series:
-    """Smooth a 1D series with a local level Kalman filter."""
+    """Smooth a 1D series with a local level Kalman filter (fallback = rolling mean)."""
     if KalmanFilter is None:
-        # simple fallback: rolling mean as a stand-in
         return y.rolling(10, min_periods=3).mean()
     kf = KalmanFilter(
         transition_matrices=[1],
@@ -73,58 +71,67 @@ def backtest_pairs(
     Simple mean-reversion pairs backtest:
       - Build log spread, smooth with Kalman
       - Trade when |z| > open_z, close when |z| < close_z or timeout
-      - 1: long A/short B when z < -open_z (expect revert up)
-         - and the opposite when z > open_z.
-      - PnL in spread space, costs in bps each side.
+      - +1 long spread (A↑ vs B↓) when z < -open_z; -1 when z > open_z
+      - PnL computed in spread space; costs approximate 4 legs in/out.
 
     Returns
     -------
     dict with keys: 'trades' (DataFrame), 'kpis' (dict)
     """
     spread = pair.log_spread().dropna()
+    if len(spread) < 30:
+        return {"trades": pd.DataFrame(), "kpis": {"n_trades": 0, "total_pnl_spread": 0.0, "win_rate": 0.0, "avg_days": 0.0}}
+
     smooth = kalman_smooth(spread)
     zs = zscore(smooth, window=60)
 
-    pos = 0  # -1 short spread (A↓ vs B↑), +1 long spread (A↑ vs B↓)
-    entry_idx = None
+    pos = 0  # -1 short spread, +1 long spread
+    entry_dt = None
+    entry_val = None
     trades = []
 
-    for i, (dt, z) in enumerate(zs.items()):
+    for dt, z in zs.items():
         if pos == 0:
             if z > open_z:
-                pos = -1
-                entry_idx = dt
-                entry_val = smooth.loc[dt]
+                pos, entry_dt, entry_val = -1, dt, float(smooth.loc[dt])
             elif z < -open_z:
-                pos = +1
-                entry_idx = dt
-                entry_val = smooth.loc[dt]
+                pos, entry_dt, entry_val = +1, dt, float(smooth.loc[dt])
         else:
-            # close condition
-            days_held = (dt - entry_idx).days if entry_idx is not None else 0
+            days_held = int((dt - entry_dt).days) if entry_dt is not None else 0
             if abs(z) < close_z or days_held >= max_holding_days:
-                exit_val = smooth.loc[dt]
-                # spread PnL: long spread = exit - entry; short spread = entry - exit
+                exit_val = float(smooth.loc[dt])
                 pnl = (exit_val - entry_val) * pos
-                # transaction costs (both legs both sides ~ 4 legs): approximate
                 costs = (trans_cost_bps / 1e4) * 4.0
                 trades.append({
-                    "entry": entry_idx, "exit": dt, "side": pos,
-                    "entry_val": float(entry_val), "exit_val": float(exit_val),
+                    "entry": entry_dt, "exit": dt, "side": pos,
+                    "entry_val": entry_val, "exit_val": exit_val,
                     "pnl": float(pnl - costs),
                     "days": days_held
                 })
-                pos = 0
-                entry_idx = None
+                pos, entry_dt, entry_val = 0, None, None
 
     trades_df = pd.DataFrame(trades)
-    kpis = {}
-    if not trades_df.empty:
-        tot_pnl = float(trades_df["pnl"].sum())
-        win_rate = float((trades_df["pnl"] > 0).mean())
-        avg_days = float(trades_df["days"].mean())
-        kpis = {"n_trades": int(len(trades_df)), "total_pnl_spread": tot_pnl, "win_rate": win_rate, "avg_days": avg_days}
-    else:
+    if trades_df.empty:
         kpis = {"n_trades": 0, "total_pnl_spread": 0.0, "win_rate": 0.0, "avg_days": 0.0}
-
+    else:
+        kpis = {
+            "n_trades": int(len(trades_df)),
+            "total_pnl_spread": float(trades_df["pnl"].sum()),
+            "win_rate": float((trades_df["pnl"] > 0).mean()),
+            "avg_days": float(trades_df["days"].mean()),
+        }
     return {"trades": trades_df, "kpis": kpis}
+
+
+def plot_spread_and_z(spread: pd.Series, window: int = 60):
+    import matplotlib.pyplot as plt
+    smooth = kalman_smooth(spread)
+    zs = zscore(smooth, window=window)
+    fig, ax1 = plt.subplots(figsize=(10, 4))
+    ax1.plot(smooth.index, smooth, label="Kalman-smoothed spread")
+    ax1.axhline(0, linestyle="--", linewidth=1)
+    ax1.set_title("Spread (smoothed) and Z-score")
+    ax2 = ax1.twinx()
+    ax2.plot(zs.index, zs, alpha=0.5, label="z-score")
+    ax1.legend(loc="upper left"); ax2.legend(loc="upper right")
+    return fig
