@@ -2,7 +2,7 @@
 
 **Course:** AAI/CPE/EE 551  
 **Semester:** 2025 Fall  
-**Repo status:** Make this repo **Public** before submitting the link on Canvas.
+
 
 ---
 
