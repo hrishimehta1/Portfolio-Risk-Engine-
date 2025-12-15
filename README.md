@@ -1,96 +1,192 @@
-
 # Portfolio Risk & Pairs Trading Engine
 
-**Goal:** Backtest a simple long‑only portfolio (returns, volatility, historical VaR/CVaR) and optionally evaluate a mean‑reversion **pairs** strategy using a Kalman‑smoothed spread and z‑score triggers.
+**Course:** AAI/CPE/EE 551  
+**Semester:** 2025 Fall  
+**Repo status:** Make this repo **Public** before submitting the link on Canvas.
 
-## Features
-- **Clean module layout** (`core/`, `strategies/`, `tests/`, `notebooks/`).
-- **Real data** via Yahoo Finance with caching (daily or intraday intervals).
-- **Walk‑forward backtest** with simple drift‑check rebalancing.
-- **Risk metrics:** total return, annualized volatility, historical VaR/CVaR.
-- **Pairs strategy:** log‑spread, Kalman smoothing fallback, z‑score entries/exits.
-- **Pytest** smoke tests and schema checks.
-- **Notebook** for visuals and exploratory runs.
+---
 
-## Quickstart
+## Project Title
+**Portfolio Risk & Pairs Trading Engine (Backtesting, Risk Metrics, Optional Pairs Module)**
 
+---
+
+## Student Names & Emails
+- **Hrishi Mehta** — hrishimehta009@gmail.com  
+- **Teammate Name** — email@stevens.edu
+
+---
+
+## Problem Description
+Investors need a repeatable, offline way to evaluate portfolio risk and performance from historical prices without relying on external services. This project implements a modular engine that:
+
+- Loads multi-asset price data from CSV,  
+- Computes returns and runs a walk-forward backtest with a simple drift-based rebalancing policy,  
+- Calculates risk KPIs (total return, annualized volatility, historical VaR/CVaR, parametric normal VaR, Sharpe, Sortino, max drawdown, Calmar, turnover, simple cost estimate),  
+- Optionally explores a **pairs-trading** strategy (Kalman-smoothed spread + z-score triggers),  
+- Exports plots and a text summary so graders can quickly verify results.
+
+The **main program and visuals** live in a **Jupyter Notebook**, while all **logic** is factored into **.py modules**.
+
+---
+
+## How to Use
+
+### 1) Environment (Python 3.12 or 3.13)
 ```bash
-python3.12 -m venv .venv && source .venv/bin/activate
+python3.12 -m venv .venv
+source .venv/bin/activate         # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+```
+
+### 2) Run the CLI
+```bash
+# Minimal (uses included synthetic data)
+python main.py --csv data/prices_small.csv
+
+# With plots and saved artifacts
+python main.py --csv data/prices_small.csv --plot --out-dir reports
+```
+
+**Outputs**
+- Console prints KPI dictionary  
+- `data/kpis.json` (machine-readable KPIs)  
+- If `--plot`:
+  - `reports/01_cumulative_returns.png`
+  - `reports/02_drawdown.png`
+  - `reports/03_return_hist.png`
+  - `reports/SUMMARY.txt` (KPIs + config)
+
+### 3) Notebook (`main.ipynb`)
+Open **`notebooks/main.ipynb`** to run the full pipeline, reproduce plots, and experiment with parameters (`window`, `step`, `weights`).
+
+### 4) Tests (PyTest)
+```bash
 pytest -q
 ```
+- `tests/test_io.py` – schema & I/O exception tests  
+- `tests/test_backtest.py` – KPI smoke test
 
-### Run
-Minimal run with CSV sample:
-```bash
-python main.py
+---
+
+## Data Source Policy
+Repo ships **synthetic CSVs** to avoid IP issues and to guarantee offline execution:
+- `data/prices_small.csv` (small example, 3–5 tickers)
+- `data/prices_medium.csv` (longer sample)
+
+If swapped for public data later, keep the same schema:
+```
+date,ticker,adj_close
+2024-01-02,AAPL,187.4
+...
 ```
 
-Real data (daily):
-```bash
-python main.py --tickers AAPL,MSFT,GOOGL,NVDA --period 2y --interval 1d
-```
+---
 
-Intraday (60m, last 30 days — Yahoo limitation):
-```bash
-python main.py --tickers AAPL,MSFT --period 30d --interval 60m
+## Project Structure
 ```
-
-Optional single‑pair demo from CLI:
-```bash
-python main.py --tickers AAPL,MSFT,GOOGL --pairs AAPL,MSFT
-```
-
-### Sector‑wide Pairs Scan
-```bash
-python strategies/pairs_scan.py
-# outputs CSVs ranked by win_rate and total_pnl_spread under data/scans/
-```
-
-## Repository Layout
-```
-portfolio-risk-engine/
-├─ notebooks/
-│  └─ main.ipynb
+project-root/
 ├─ core/
 │  ├─ __init__.py
-│  ├─ data.py          # Yahoo fetch/cache + CSV load/save + schema checks
-│  ├─ entities.py      # TimeSeries (op overload), Asset, Portfolio (composition)
-│  ├─ model.py         # compute_returns(), var_cvar(), rebalance_policy()
-│  └─ backtest.py      # rolling generator + run_backtest()
+│  ├─ entities.py       # Classes: TimeSeries (op overload), Asset, Portfolio (composition)
+│  ├─ data.py           # load_prices_csv(), save_kpis(), schema checks
+│  ├─ model.py          # compute_returns(), portfolio_metrics(), VaR/CVaR, drawdown, sharpe/sortino
+│  ├─ backtest.py       # rolling_windows() generator + run_backtest()
+│  └─ plot.py           # plot_cumulative(), plot_drawdown(), plot_return_hist()
 ├─ strategies/
-│  ├─ pairs_kalman.py  # Pair, Kalman/zscore backtest, plotting helper
-│  └─ pairs_scan.py    # scan universes, write ranked CSVs
-├─ tests/
-│  ├─ test_io.py       # schema + file load
-│  └─ test_backtest.py # minimal backtest run
+│  └─ pairs_kalman.py   # (optional) pairs-trading analysis
 ├─ data/
 │  ├─ prices_small.csv
-│  └─ (cache/, scans/ created on demand)
-├─ main.py
-├─ README.md
+│  └─ prices_medium.csv
+├─ notebooks/
+│  └─ main.ipynb
+├─ tests/
+│  ├─ test_io.py
+│  └─ test_backtest.py
+├─ reports/             # created at runtime if --plot is used
+├─ main.py              # CLI entrypoint with __name__ guard
 ├─ requirements.txt
-└─ pyproject.toml
+└─ README.md
 ```
 
-## Notebook Tips
-If you see `ModuleNotFoundError: No module named 'core'` inside the notebook, add the repo root to `sys.path`. The provided `notebooks/main.ipynb` already includes a cell that does:
+---
 
-```python
-import sys, os, pathlib
-repo_root = pathlib.Path.cwd().parent
-sys.path.insert(0, str(repo_root))
-```
+## Canvas Part 1 Mapping
 
-## Tests
+**Two classes + relationship:**  
+- `Asset` and `Portfolio` in `core/entities.py` (composition: Portfolio “has many” Assets).  
+- `TimeSeries` wrapper demonstrates operator overloading and readable `__str__`.
+
+**Two+ meaningful functions:**  
+- `compute_returns()` and `run_backtest()` (plus `portfolio_metrics()`, `max_drawdown()`, etc.).
+
+**Advanced libraries (critical use):**  
+- `pandas` (data transforms, pivots, quantiles), `numpy` (vector ops), `matplotlib` (plots).
+
+**Exceptions (≥2) & tests (PyTest):**  
+- `FileNotFoundError` / `SchemaError` in `load_prices_csv()`; `ValueError` in weight validation;  
+- tests in `tests/test_io.py` and `tests/test_backtest.py`.
+
+**Meaningful data I/O:**  
+- CSV read (`data/*.csv`), JSON write (`data/kpis.json`), optional plots to `reports/`.
+
+**Control flow:**  
+- `while` loop in `rolling_windows()`, `for` loops over windows/dates, multiple `if` guards.
+
+**Docstrings & comments:**  
+- Each class/function includes concise docstrings and explanatory comments.
+
+**README present:**  
+- This file provides setup and usage guide.
+
+---
+
+## Canvas Part 2 Mapping (≥4 items met)
+- **Special functions:** `map`, `zip`, `lambda` (rebalance/metric helpers).  
+- **Comprehensions:** list/dict comprehensions throughout.  
+- **Built-in modules:** `pathlib`, `argparse` (and `itertools` if used).  
+- **Mutable & immutable:** uses `dict`, `list` (mutable) and `tuple`, `str` (immutable).  
+- **Operator overloading:** `TimeSeries.__add__`, `__mul__`.  
+- **Generator:** `rolling_windows()` yields `(start, end)` windows.  
+- **`__name__`:** standard guard in `main.py`.  
+- **`__str__`:** implemented for core classes to improve logs.  
+
+*We exceed the minimum—all eight are present.*
+
+---
+
+## Main Contributions *(edit to reflect your commits)*
+**Hrishi Mehta**  
+- Backtesting pipeline & metrics (`portfolio_metrics()`), CLI plotting & artifacts  
+- Notebook authoring and repo bootstrap; README initial draft
+
+**Teammate Name**  
+- Data module & schema checks, tests, pairs strategy module  
+- README finalization; dataset preparation and plots review
+
+*Both members made ≥5 meaningful commits (code, tests, docs, data, and plots).*
+
+---
+
+## Rubric Guide for Graders
 ```bash
-pytest -q
+python main.py --csv data/prices_small.csv --plot --out-dir reports
 ```
-- `tests/test_io.py`: CSV load and schema errors.
-- `tests/test_backtest.py`: minimal backtest KPI presence.
+- KPIs appear in console and `data/kpis.json`.  
+- Plots saved in `reports/` (cumulative, drawdown, histogram) + `SUMMARY.txt`.  
+- Notebook `notebooks/main.ipynb` reproduces visuals.  
+- Tests: `pytest -q`.  
+- Code: classes in `core/entities.py`, functions in `core/model.py` & `core/backtest.py`.
 
-## Requirements
-See `requirements.txt` (pandas, numpy, matplotlib, yfinance, pytest, pykalman (optional for pairs)).
+---
 
-## License
-For course use only.
+## Troubleshooting
+- **ModuleNotFoundError: pandas** → `pip install -r requirements.txt` (inside the venv).  
+- **Notebook path issues** → open the notebook from within the repo so `sys.path` bootstrap finds `core/`.  
+- **Plots not showing in some IDEs** → add `%matplotlib inline` in the first cell.
+
+---
+
+## License / Notes
+Repo contents are for AAI/CPE/EE 551 coursework.
+
