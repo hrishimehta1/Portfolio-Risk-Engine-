@@ -2,6 +2,3 @@ pandas>=2.1
 numpy>=1.26
 matplotlib>=3.8
 pytest>=8.0
-yfinance>=0.2
-pykalman>=0.9.7
-nbformat>=5.9
