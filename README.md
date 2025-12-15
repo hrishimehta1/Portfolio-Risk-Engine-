@@ -13,7 +13,7 @@
 
 ## Student Names & Emails
 - **Hrishi Mehta** — hrishimehta009@gmail.com  
-- **Teammate Name** — email@stevens.edu
+- **Mohan Dichpally** — mdichpal@stevens.edu
 
 ---
 
