@@ -1,32 +1,133 @@
+from __future__ import annotations
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterable, Optional
+import hashlib
+import time
+
 import pandas as pd
-import yfinance as yf
+
+try:
+    import yfinance as yf
+except Exception:  # Keep import errors clear outside tests
+    yf = None
+
 
 class SchemaError(Exception):
-    """Raised when a fetched dataset is missing required columns."""
-    pass
+    """Raised when input data has missing or malformed columns."""
 
-def fetch_or_cache_yf(tickers: list[str], period: str = "1y", interval: str = "1d", cache_dir: str = "data/cache") -> pd.DataFrame:
-    """Fetch price data via yfinance and cache per-ticker CSVs. Returns long DataFrame."""
-    out: list[pd.DataFrame] = []
-    cdir = Path(cache_dir); cdir.mkdir(parents=True, exist_ok=True)
 
-    for t in tickers:
-        cache = cdir / f"{t.upper()}_{period}_{interval}.csv"
+@dataclass
+class FetchConfig:
+    period: str = "2y"          # e.g. '1y', '2y', '5y'
+    interval: str = "1d"        # '1d', '1h', '1wk'
+    cache_dir: Path = Path("data/cache")
+    force_refresh: bool = False
+    max_retries: int = 3
+    retry_sleep: float = 1.25   # seconds
+
+
+def _cache_key(tickers: Iterable[str], cfg: FetchConfig) -> Path:
+    key_src = "|".join(sorted([t.upper() for t in tickers])) + f"|{cfg.period}|{cfg.interval}"
+    h = hashlib.sha256(key_src.encode()).hexdigest()[:16]
+    cfg.cache_dir.mkdir(parents=True, exist_ok=True)
+    return cfg.cache_dir / f"yf_{h}.csv"
+
+
+def fetch_or_cache_yf(
+    tickers: list[str],
+    cfg: Optional[FetchConfig] = None,
+) -> pd.DataFrame:
+    """
+    Fetch Adjusted Close for multiple tickers from Yahoo Finance, with caching.
+
+    Returns
+    -------
+    pd.DataFrame (long)
+        Columns = ['date', 'ticker', 'adj_close']
+    """
+    if cfg is None:
+        cfg = FetchConfig()
+    cache_path = _cache_key(tickers, cfg)
+
+    if cache_path.exists() and not cfg.force_refresh:
+        df = pd.read_csv(cache_path, parse_dates=["date"])
+        _validate_prices_df(df)
+        print(f"[data] Loaded from cache: {cache_path}")
+        return df
+
+    if yf is None:
+        raise ImportError("yfinance is not installed. pip install yfinance")
+
+    # Robust multi-ticker download with simple retry
+    last_err = None
+    for attempt in range(1, cfg.max_retries + 1):
         try:
-            if cache.exists():
-                df = pd.read_csv(cache, parse_dates=["Datetime"])
-            else:
-                hist = yf.Ticker(t).history(period=period, interval=interval, actions=False)
-                if hist.empty or "Close" not in hist.columns:
-                    raise SchemaError(f"No 'Close' prices returned for {t}.")
-                df = hist.reset_index()[["Datetime", "Close"]]
-                df.to_csv(cache, index=False)
-            df["ticker"] = t.upper()
-            df = df.rename(columns={"Datetime": "date", "Close": "adj_close"})
-            out.append(df[["date", "ticker", "adj_close"]])
+            data = yf.download(
+                tickers=" ".join(tickers),
+                period=cfg.period,
+                interval=cfg.interval,
+                auto_adjust=False,
+                group_by="ticker",
+                progress=False,
+                threads=True,
+            )
+            break
         except Exception as e:
-            print(f"Warning: failed to fetch {t}: {e}")
-    if not out:
-        raise FileNotFoundError("No ticker data available after fetching/caching.")
-    return pd.concat(out).sort_values(["ticker", "date"]).reset_index(drop=True)
+            last_err = e
+            print(f"[data] Attempt {attempt} failed: {e}")
+            time.sleep(cfg.retry_sleep)
+    else:
+        raise RuntimeError(f"Failed to fetch from Yahoo after {cfg.max_retries} attempts: {last_err}")
+
+    # Normalize to long format
+    if isinstance(data.columns, pd.MultiIndex):
+        long = []
+        for t in tickers:
+            if (t, "Adj Close") not in data.columns:
+                raise SchemaError(f"Missing Adj Close for {t}")
+            s = data[(t, "Adj Close")].rename("adj_close").dropna()
+            out = s.reset_index().rename(columns={"Date": "date"})
+            out["ticker"] = t.upper()
+            long.append(out[["date", "ticker", "adj_close"]])
+        df = pd.concat(long, ignore_index=True)
+    else:
+        # Single ticker frames come as flat columns
+        if "Adj Close" not in data.columns:
+            raise SchemaError("Missing 'Adj Close' in Yahoo output.")
+        df = data["Adj Close"].dropna().reset_index().rename(columns={"Date": "date", "Adj Close": "adj_close"})
+        df["ticker"] = tickers[0].upper()
+        df = df[["date", "ticker", "adj_close"]]
+
+    df = df.sort_values(["ticker", "date"]).reset_index(drop=True)
+    df.to_csv(cache_path, index=False)
+    print(f"[data] Fetched and cached: {cache_path}")
+    return df
+
+
+def load_prices_csv(path: str | Path) -> pd.DataFrame:
+    """
+    Load a long-format prices CSV with columns: date, ticker, adj_close
+    """
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"Missing prices file: {p.resolve()}")
+    df = pd.read_csv(p, parse_dates=["date"])
+    _validate_prices_df(df)
+    return df.sort_values(["ticker", "date"]).reset_index(drop=True)
+
+
+def _validate_prices_df(df: pd.DataFrame) -> None:
+    required = {"date", "ticker", "adj_close"}
+    if not required.issubset(df.columns):
+        missing = required - set(df.columns)
+        raise SchemaError(f"Prices CSV missing columns: {missing}")
+    if not pd.api.types.is_datetime64_any_dtype(df["date"]):
+        raise SchemaError("date must be datetime-like")
+    if df["adj_close"].isna().any():
+        raise SchemaError("adj_close contains NaNs; clean your input file.")
+
+
+def save_kpis(path: str | Path, kpis: dict) -> None:
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    pd.Series(kpis, dtype="float64").to_json(path, indent=2)
