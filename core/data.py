@@ -9,7 +9,7 @@ import pandas as pd
 
 try:
     import yfinance as yf
-except Exception:  # Keep import errors clear outside tests
+except Exception:
     yf = None
 
 
@@ -19,8 +19,8 @@ class SchemaError(Exception):
 
 @dataclass
 class FetchConfig:
-    period: str = "2y"          # e.g. '1y', '2y', '5y'
-    interval: str = "1d"        # '1d', '1h', '1wk'
+    period: str = "2y"          # e.g. '1y', '2y', '5y', '30d' (for 60m)
+    interval: str = "1d"        # '1d', '1h', '60m', '1wk'
     cache_dir: Path = Path("data/cache")
     force_refresh: bool = False
     max_retries: int = 3
@@ -32,6 +32,27 @@ def _cache_key(tickers: Iterable[str], cfg: FetchConfig) -> Path:
     h = hashlib.sha256(key_src.encode()).hexdigest()[:16]
     cfg.cache_dir.mkdir(parents=True, exist_ok=True)
     return cfg.cache_dir / f"yf_{h}.csv"
+
+
+def _normalize_index_column(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Yahoo sometimes returns Date or Datetime index/column.
+    Normalize to a 'date' datetime64[ns] column.
+    """
+    out = df.copy()
+    if "Date" in out.columns:
+        out = out.rename(columns={"Date": "date"})
+    if "Datetime" in out.columns:
+        out = out.rename(columns={"Datetime": "date"})
+    if not isinstance(out.index, pd.DatetimeIndex) and "date" not in out.columns:
+        # sometimes date is the index
+        if isinstance(out.index, pd.DatetimeIndex):
+            out = out.reset_index().rename(columns={"index": "date"})
+    if "date" not in out.columns:
+        # final fallback: promote index to date
+        out = out.reset_index().rename(columns={"index": "date"})
+    out["date"] = pd.to_datetime(out["date"])
+    return out
 
 
 def fetch_or_cache_yf(
@@ -59,7 +80,6 @@ def fetch_or_cache_yf(
     if yf is None:
         raise ImportError("yfinance is not installed. pip install yfinance")
 
-    # Robust multi-ticker download with simple retry
     last_err = None
     for attempt in range(1, cfg.max_retries + 1):
         try:
@@ -80,24 +100,24 @@ def fetch_or_cache_yf(
     else:
         raise RuntimeError(f"Failed to fetch from Yahoo after {cfg.max_retries} attempts: {last_err}")
 
-    # Normalize to long format
     if isinstance(data.columns, pd.MultiIndex):
         long = []
         for t in tickers:
-            if (t, "Adj Close") not in data.columns:
+            col = (t, "Adj Close")
+            if col not in data.columns:
                 raise SchemaError(f"Missing Adj Close for {t}")
-            s = data[(t, "Adj Close")].rename("adj_close").dropna()
-            out = s.reset_index().rename(columns={"Date": "date"})
-            out["ticker"] = t.upper()
-            long.append(out[["date", "ticker", "adj_close"]])
+            s = data[col].dropna()
+            frame = _normalize_index_column(s.to_frame(name="adj_close"))
+            frame["ticker"] = t.upper()
+            long.append(frame[["date", "ticker", "adj_close"]])
         df = pd.concat(long, ignore_index=True)
     else:
-        # Single ticker frames come as flat columns
+        # Single ticker
         if "Adj Close" not in data.columns:
             raise SchemaError("Missing 'Adj Close' in Yahoo output.")
-        df = data["Adj Close"].dropna().reset_index().rename(columns={"Date": "date", "Adj Close": "adj_close"})
-        df["ticker"] = tickers[0].upper()
-        df = df[["date", "ticker", "adj_close"]]
+        frame = _normalize_index_column(data[["Adj Close"]].rename(columns={"Adj Close": "adj_close"}))
+        frame["ticker"] = tickers[0].upper()
+        df = frame[["date", "ticker", "adj_close"]]
 
     df = df.sort_values(["ticker", "date"]).reset_index(drop=True)
     df.to_csv(cache_path, index=False)
@@ -106,9 +126,6 @@ def fetch_or_cache_yf(
 
 
 def load_prices_csv(path: str | Path) -> pd.DataFrame:
-    """
-    Load a long-format prices CSV with columns: date, ticker, adj_close
-    """
     p = Path(path)
     if not p.exists():
         raise FileNotFoundError(f"Missing prices file: {p.resolve()}")
