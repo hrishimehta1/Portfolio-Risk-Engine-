@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Envs
+.venv/
+venv/
+env/
+
+# Reports/outputs (optional – keep if you want them in git)
+reports/
+data/kpis.json
+
+# OS
+.DS_Store

@@ -1,0 +1,14 @@
+{
+  "total_return":-0.0421285834,
+  "ann_vol":0.1491897743,
+  "hist_VaR":0.0149091472,
+  "hist_CVaR":0.0181608919,
+  "norm_VaR":0.0157534824,
+  "sharpe":-0.4983402912,
+  "sortino":-0.9056975343,
+  "max_drawdown":-0.1473914654,
+  "calmar":-0.555393246,
+  "turnover_L1":0.0,
+  "cost_estimate":0.0,
+  "n_days":127.0
+}
