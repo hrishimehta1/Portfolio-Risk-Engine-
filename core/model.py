@@ -11,12 +11,12 @@ import pandas as pd
 def compute_returns(prices_wide: pd.DataFrame) -> pd.DataFrame:
     """
     Compute simple daily returns per column (ticker).
-    Drops the first NA row from pct_change; fills residual NaNs with 0 for stability.
+    
     """
     rets = prices_wide.pct_change().dropna(how="all")
     return rets.fillna(0.0)
 
-# ---------- Risk metrics 
+# Risk metrics 
 
 def var_historical(series: pd.Series, alpha: float = 0.05) -> float:
     """Historical VaR at level alpha (reported as positive loss magnitude)."""
@@ -41,7 +41,7 @@ def var_parametric_normal(series: pd.Series, alpha: float = 0.05) -> Optional[fl
     if sigma == 0:
         return 0.0
     try:
-        from scipy.stats import norm  # optional dependency
+        from scipy.stats import norm  
         z = float(norm.ppf(alpha))
         var = -(mu + z * sigma)
         return float(max(var, 0.0))
@@ -94,7 +94,7 @@ def portfolio_metrics(portfolio_rets: pd.Series, alpha: float = 0.05) -> Dict[st
         kpis["norm_VaR_5"] = norm_var_opt
     return kpis
 
-# Rebalacinign Policy
+# Rebalancing Policy
 
 def rebalance_policy(curr_weights: Dict[str, float],
                      target: Dict[str, float],
