@@ -22,8 +22,7 @@ Investors need a repeatable, offline way to evaluate portfolio risk and performa
 
 - Loads multi-asset price data from CSV,  
 - Computes returns and runs a walk-forward backtest with a simple drift-based rebalancing policy,  
-- Calculates risk KPIs (total return, annualized volatility, historical VaR/CVaR, parametric normal VaR, Sharpe, Sortino, max drawdown, Calmar, turnover, simple cost estimate),  
-- Optionally explores a **pairs-trading** strategy (Kalman-smoothed spread + z-score triggers),  
+- Calculates risk KPIs (total return, annualized volatility, historical VaR/CVaR, parametric normal VaR, Sharpe, Sortino, max drawdown, Calmar, turnover, simple cost estimate),   
 - Exports plots and a text summary so graders can quickly verify results.
 
 The **main program and visuals** live in a **Jupyter Notebook**, while all **logic** is factored into **.py modules**.
@@ -93,8 +92,6 @@ project-root/
 │  ├─ model.py          # compute_returns(), portfolio_metrics(), VaR/CVaR, drawdown, sharpe/sortino
 │  ├─ backtest.py       # rolling_windows() generator + run_backtest()
 │  └─ plot.py           # plot_cumulative(), plot_drawdown(), plot_return_hist()
-├─ strategies/
-│  └─ pairs_kalman.py   # (optional) pairs-trading analysis
 ├─ data/
 │  ├─ prices_small.csv
 │  └─ prices_medium.csv
@@ -160,7 +157,7 @@ project-root/
 - Backtesting pipeline & metrics (`portfolio_metrics()`), CLI plotting & artifacts  
 - Notebook authoring and repo bootstrap; README initial draft
 
-**Teammate Name**  
+**Mohan Dichpally**  
 - Data module & schema checks, tests, pairs strategy module  
 - README finalization; dataset preparation and plots review
 
